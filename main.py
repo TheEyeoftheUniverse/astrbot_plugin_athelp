@@ -6,7 +6,7 @@ from astrbot.api.star import Context, Star, register
 import re
 import time
 
-@register("auto_at_plugin", "TEOFTU", "将LLM回复中的@文本转换为真正的@消息", "1.0.0")
+@register("auto_at_plugin", "Developer", "自动将LLM回复中的@文本转换为真正的@消息", "1.0.0")
 class AutoAtPlugin(Star):
 
     def __init__(self, context: Context):
@@ -14,7 +14,7 @@ class AutoAtPlugin(Star):
         # 初始化群成员缓存 {group_id: {'members': [], 'last_updated': timestamp}}
         self.group_member_cache = {}
         # 缓存过期时间（秒）
-        self.cache_expiry = 3000  # 50分钟
+        self.cache_expiry = 300  # 5分钟
         logger.info("AutoAtPlugin 初始化完成")
 
     @filter.on_decorating_result()
@@ -64,6 +64,7 @@ class AutoAtPlugin(Star):
             # 如果找到了user_id，就添加一个At组件
             if user_id:
                 new_chain.append(Comp.At(qq=user_id))
+                new_chain.append(Comp.Plain(" "))  # 添加一个空格
                 found_at = True
                 logger.info(f"成功将@{username}转换为At组件，用户ID: {user_id}")
             else:
@@ -129,5 +130,35 @@ class AutoAtPlugin(Star):
         members = self.group_member_cache[group_id]['members']
         username_clean = username.strip()
         
-        logger.debug(f"在群 {group_id} 中查找用户: {username_clean}")
-        logger.debug(f"群成员列表: {[{'nickname': m.get('nickname'), 'card': m.get('card'), 'user_id': m.get('user_id
+        logger.debug(f"在群 {group_id} 中查找用户: {repr(username_clean)}")
+        
+        # 在成员列表中查找匹配的用户
+        for member in members:
+            # 检查昵称或群名片是否匹配
+            nickname = member.get('nickname', '')
+            card = member.get('card', '')
+            user_id = member.get('user_id')
+            
+            # 去除字符串两端的空白字符
+            nickname_clean = nickname.strip()
+            card_clean = card.strip()
+            
+            # 使用repr()来显示字符串的原始形式，包括不可见字符
+            logger.debug(f"检查成员: nickname={repr(nickname_clean)}, card={repr(card_clean)}, user_id={user_id}")
+            
+            # 尝试多种匹配方式
+            if (nickname_clean == username_clean or 
+                card_clean == username_clean or 
+                nickname_clean.startswith(username_clean) or 
+                card_clean.startswith(username_clean) or
+                username_clean in nickname_clean or 
+                username_clean in card_clean):
+                logger.info(f"从缓存中找到用户: {username_clean} -> {user_id} (昵称: {nickname_clean}, 群名片: {card_clean})")
+                return user_id
+        
+        logger.warning(f"在群 {group_id} 中未找到用户: {repr(username_clean)}")
+        return None
+
+    async def terminate(self):
+        """插件卸载时调用"""
+        logger.info("AutoAtPlugin 已卸载")
